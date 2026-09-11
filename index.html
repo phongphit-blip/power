@@ -478,6 +478,22 @@
     display:none;
   }
   .explain-note.show{ display:block; }
+  .tf-row{
+    margin-top:18px;
+    display:none;
+  }
+  .tf-row.show{ display:block; }
+  .tf-row label{
+    font-size:13px;
+    color:var(--ink-soft);
+    display:block;
+    margin-bottom:8px;
+  }
+  .tf-buttons{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+  }
 
   .case-actions{
     display:flex;
@@ -571,6 +587,14 @@
             <div class="check-feedback" id="checkFeedback"></div>
           </div>
           <div class="explain-note" id="explainNote">📝 ข้อนี้เป็นคำถามอธิบาย ให้นักเรียนเขียนคำตอบลงกระดาษก่อน แล้วกด "เฉลยคดี" เพื่อตรวจสอบด้วยตนเอง</div>
+          <div class="tf-row" id="tfRow">
+            <label>🕵️ นักสืบคิดว่าข้อความนี้ ถูก หรือ ผิด?</label>
+            <div class="tf-buttons">
+              <button class="btn" id="tfTrueBtn" disabled>✅ ถูก</button>
+              <button class="btn stop" id="tfFalseBtn" disabled>❌ ผิด</button>
+            </div>
+            <div class="check-feedback" id="tfFeedback"></div>
+          </div>
           <div class="answer-box" id="answerBox">
             <b>เฉลย:</b> <span id="answerText"></span>
             <div id="timeSpentText" style="margin-top:6px; font-size:12.5px; color:var(--ink-soft);"></div>
@@ -596,7 +620,7 @@ const CASES = {
     {q:"4³ มีค่าเท่ากับเท่าใด?", a:"64", type:"exact", accept:["64"]},
     {q:"10⁵ มีค่าเท่ากับเท่าใด?", a:"100,000", type:"exact", accept:["100000"]},
     {q:"7 × 7 × 7 เขียนเป็นเลขยกกำลังได้ว่าอะไร?", a:"7³", type:"exact", accept:["7^3"]},
-    {q:"เพื่อนเขียนว่า 6⁴ = 6×4 นักสืบคิดว่าถูกหรือผิด เพราะอะไร?", a:"ผิด เพราะ 6⁴ = 6×6×6×6 ไม่ใช่ 6×4", type:"explain"},
+    {q:"เพื่อนเขียนว่า 6⁴ = 6×4 นักสืบคิดว่าถูกหรือผิด เพราะอะไร?", a:"ผิด เพราะ 6⁴ = 6×6×6×6 ไม่ใช่ 6×4", type:"truefalse", correct:false},
     {q:"9² มีค่าเท่ากับเท่าใด?", a:"81", type:"exact", accept:["81"]},
   ],
   rules: [
@@ -606,7 +630,7 @@ const CASES = {
     {q:"4² × 4⁵ เขียนในรูปเลขยกกำลังฐานเดียวได้ว่าอะไร?", a:"4⁷", type:"exact", accept:["4^7"]},
     {q:"10⁸ ÷ 10³ มีค่าเท่ากับเลขยกกำลังใด?", a:"10⁵", type:"exact", accept:["10^5"]},
     {q:"(2⁴)² มีค่าเท่ากับเลขยกกำลังใด?", a:"2⁸", type:"exact", accept:["2^8"]},
-    {q:"เพื่อนเขียนว่า 3² × 3³ = 3⁶ นักสืบคิดว่าถูกหรือผิด?", a:"ผิด ที่ถูกคือ 3⁵ (บวกเลขชี้กำลัง ไม่ใช่คูณ)", type:"explain"},
+    {q:"เพื่อนเขียนว่า 3² × 3³ = 3⁶ นักสืบคิดว่าถูกหรือผิด?", a:"ผิด ที่ถูกคือ 3⁵ (บวกเลขชี้กำลัง ไม่ใช่คูณ)", type:"truefalse", correct:false},
     {q:"(5³)² ÷ 5² มีค่าเท่ากับเลขยกกำลังใด?", a:"5⁴", type:"exact", accept:["5^4"]},
   ],
   challenge: [
@@ -692,6 +716,10 @@ const answerRow = document.getElementById('answerRow');
 const answerInput = document.getElementById('answerInput');
 const checkFeedback = document.getElementById('checkFeedback');
 const explainNote = document.getElementById('explainNote');
+const tfRow = document.getElementById('tfRow');
+const tfTrueBtn = document.getElementById('tfTrueBtn');
+const tfFalseBtn = document.getElementById('tfFalseBtn');
+const tfFeedback = document.getElementById('tfFeedback');
 
 let solvedThisCase = false;
 let playerIdentity = "";
@@ -707,6 +735,8 @@ function setInterfaceLocked(unlocked){
   document.getElementById('drawBtn').disabled = !unlocked;
   document.getElementById('checkBtn').disabled = !unlocked;
   document.getElementById('revealBtn').disabled = !unlocked;
+  document.getElementById('tfTrueBtn').disabled = !unlocked;
+  document.getElementById('tfFalseBtn').disabled = !unlocked;
 }
 
 document.getElementById('confirmNameBtn').addEventListener('click', async ()=>{
@@ -940,12 +970,18 @@ function drawNewCase(){
   answerInput.value = "";
   timeSpentText.textContent = "";
   lastElapsedSeconds = null;
+  tfFeedback.textContent = "";
+  tfFeedback.className = "check-feedback";
+
+  answerRow.classList.remove('show');
+  explainNote.classList.remove('show');
+  tfRow.classList.remove('show');
 
   if(currentCase.type === "exact"){
     answerRow.classList.add('show');
-    explainNote.classList.remove('show');
+  } else if(currentCase.type === "truefalse"){
+    tfRow.classList.add('show');
   } else {
-    answerRow.classList.remove('show');
     explainNote.classList.add('show');
   }
 
@@ -995,6 +1031,30 @@ document.getElementById('revealBtn').addEventListener('click', ()=>{
     addPointToLeaderboard();
   }
 });
+
+function handleTfAnswer(userChoiceIsTrue){
+  if(!currentCase || currentCase.type !== "truefalse"){ return; }
+  if(userChoiceIsTrue === currentCase.correct){
+    tfFeedback.textContent = "✅ ถูกต้อง! เก่งมาก นักสืบ";
+    tfFeedback.className = "check-feedback correct";
+    answerText.textContent = currentCase.a;
+    answerBox.classList.add('show');
+    stampEl.classList.add('show');
+    if(!solvedThisCase){
+      solvedThisCase = true;
+      const elapsed = stopTimerAndRecordElapsed();
+      timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
+      score++;
+      scoreEl.textContent = score;
+      addPointToLeaderboard();
+    }
+  } else {
+    tfFeedback.textContent = "❌ ยังไม่ถูก ลองคิดดูอีกครั้ง";
+    tfFeedback.className = "check-feedback wrong";
+  }
+}
+tfTrueBtn.addEventListener('click', ()=> handleTfAnswer(true));
+tfFalseBtn.addEventListener('click', ()=> handleTfAnswer(false));
 
 /* ---- Timer (auto, set by which แฟ้ม the case belongs to) ---- */
 const CATEGORY_TIME = {
