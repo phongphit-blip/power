@@ -841,8 +841,8 @@ const CATEGORY_LABEL = {
   challenge: "Power Challenge",
   reallife: "Power in Real Life",
 };
-function sendToSheet(category, question, result, timeSpent){
-  if(!GAS_WEBAPP_URL){ return; }
+function sendToSheet(category, question, result, timeSpent, points, isFast){
+  if(!GAS_WEBAPP_URL){ return Promise.resolve(); }
   const payload = {
     name: confirmedName || "",
     room: confirmedRoom || "",
@@ -850,13 +850,44 @@ function sendToSheet(category, question, result, timeSpent){
     question: question,
     result: result,
     timeSpent: (typeof timeSpent === "number") ? timeSpent : "",
+    points: (typeof points === "number") ? points : 1,
+    isFast: !!isFast,
   };
   // ใช้ Content-Type: text/plain เพื่อเลี่ยง CORS preflight ที่ Apps Script ไม่รองรับ
-  fetch(GAS_WEBAPP_URL, {
+  return fetch(GAS_WEBAPP_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
   }).catch(err => console.error("ส่งข้อมูลไป Google Sheet ไม่สำเร็จ", err));
+}
+function clearSheetLog(){
+  if(!GAS_WEBAPP_URL){ return Promise.resolve(); }
+  return fetch(GAS_WEBAPP_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action: "clear" }),
+  }).catch(err => console.error("ล้างข้อมูลใน Google Sheet ไม่สำเร็จ", err));
+}
+async function fetchLeaderboardFromSheet(){
+  if(!GAS_WEBAPP_URL){ return {}; }
+  try{
+    const res = await fetch(GAS_WEBAPP_URL + "?action=leaderboard");
+    const json = await res.json();
+    if(json.status !== "ok" || !Array.isArray(json.data)){ return {}; }
+    const board = {};
+    json.data.forEach(item=>{
+      const key = `${item.name} (${item.room})`;
+      board[key] = {
+        score: item.score || 0,
+        catsSolved: item.cats || {},
+        fastCount: item.fastCount || 0,
+      };
+    });
+    return board;
+  }catch(e){
+    console.error("โหลดกระดานอันดับจาก Google Sheet ไม่สำเร็จ", e);
+    return {};
+  }
 }
 
 const TAG_NAMES = {
@@ -1103,20 +1134,7 @@ function showInfoModalRaw(title, htmlMessage){
 }
 
 async function loadLeaderboard(){
-  try{
-    const result = await window.storage.get('leaderboard', true);
-    return result ? JSON.parse(result.value) : {};
-  }catch(e){
-    return {};
-  }
-}
-async function saveLeaderboard(board){
-  try{
-    const result = await window.storage.set('leaderboard', JSON.stringify(board), true);
-    if(!result){ console.error('บันทึกกระดานอันดับไม่สำเร็จ'); }
-  }catch(e){
-    console.error('storage error', e);
-  }
+  return await fetchLeaderboardFromSheet();
 }
 function renderLeaderboard(board){
   const arr = Object.entries(board)
@@ -1250,10 +1268,14 @@ document.getElementById('exportCsvBtn').addEventListener('click', async ()=>{
   if(!(await verifyAdminPin())){ return; }
   exportLeaderboardCsv();
 });
+async function syncLeaderboardQuiet(){
+  const board = await loadLeaderboard();
+  cachedBoard = board;
+  renderLeaderboard(board);
+}
 async function refreshLeaderboard(){
   lbList.innerHTML = '<div class="lb-empty">กำลังโหลด...</div>';
-  const board = await loadLeaderboard();
-  renderLeaderboard(board);
+  await syncLeaderboardQuiet();
 }
 let leaderboardQueue = Promise.resolve();
 function recordSolve(category, isFast, points){
@@ -1263,33 +1285,37 @@ function recordSolve(category, isFast, points){
     .catch(e => console.error("recordSolve error", e));
   return leaderboardQueue;
 }
+let cachedBoard = {};
+
 async function doRecordSolve(category, isFast, points){
   if(!playerIdentity){ return; }
-  const board = await loadLeaderboard();
-  const rec = normalizePlayerRecord(board[playerIdentity]);
+  const rec = normalizePlayerRecord(cachedBoard[playerIdentity]);
   const beforeBadges = getBadges(rec);
 
   rec.score += points;
   rec.catsSolved[category] = (rec.catsSolved[category] || 0) + 1;
   if(isFast){ rec.fastCount += 1; }
 
-  board[playerIdentity] = rec;
-  await saveLeaderboard(board);
-  renderLeaderboard(board);
+  cachedBoard[playerIdentity] = rec;
+  renderLeaderboard(cachedBoard);
 
   const afterBadges = getBadges(rec);
   const newBadges = afterBadges.filter(b => !beforeBadges.includes(b));
   if(newBadges.length > 0){
     await showBadgeUnlockModal(newBadges);
   }
+
+  // ซิงก์กับข้อมูลจริงใน Google Sheet เงียบ ๆ เผื่อมีเพื่อนเล่นพร้อมกันจากเครื่องอื่น
+  setTimeout(syncLeaderboardQuiet, 1500);
 }
 
 document.getElementById('refreshLbBtn').addEventListener('click', refreshLeaderboard);
 document.getElementById('clearLbBtn').addEventListener('click', async ()=>{
   if(!(await verifyAdminPin())){ return; }
-  const ok = await showConfirmModal("ยืนยันการล้างกระดาน", "ล้างกระดานอันดับของทุกคนทั้งหมด? การกระทำนี้ย้อนกลับไม่ได้");
+  const ok = await showConfirmModal("ยืนยันการล้างกระดาน", "ล้างข้อมูลคะแนนทั้งหมดใน Google Sheet? การกระทำนี้ย้อนกลับไม่ได้ แนะนำให้ดาวน์โหลด CSV เก็บไว้ก่อนนะคะ");
   if(ok){
-    await saveLeaderboard({});
+    await clearSheetLog();
+    cachedBoard = {};
     renderLeaderboard({});
   }
 });
@@ -1414,7 +1440,7 @@ document.getElementById('checkBtn').addEventListener('click', ()=>{
       scoreEl.textContent = score;
       celebrate(checkFeedback, points);
       recordSolve(currentCase.cat, isFast, points);
-      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed);
+      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed, points, isFast);
     }
   } else {
     checkFeedback.textContent = "❌ ยังไม่ถูก ลองตรวจสอบวิธีคิดอีกครั้ง";
@@ -1439,7 +1465,7 @@ document.getElementById('revealBtn').addEventListener('click', ()=>{
     score += 1;
     scoreEl.textContent = score;
     recordSolve(currentCase.cat, false, 1);
-    sendToSheet(currentCase.cat, currentCase.q, "เฉลย", elapsed);
+    sendToSheet(currentCase.cat, currentCase.q, "เฉลย", elapsed, 1, false);
   }
 });
 
@@ -1460,7 +1486,7 @@ function handleTfAnswer(userChoiceIsTrue){
       scoreEl.textContent = score;
       celebrate(tfFeedback, points);
       recordSolve(currentCase.cat, isFast, points);
-      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed);
+      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed, points, isFast);
     }
   } else {
     tfFeedback.textContent = "❌ ยังไม่ถูก ลองคิดดูอีกครั้ง";
@@ -1494,7 +1520,7 @@ fieldsCheckBtn.addEventListener('click', ()=>{
       scoreEl.textContent = score;
       celebrate(fieldsFeedback, points);
       recordSolve(currentCase.cat, isFast, points);
-      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed);
+      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed, points, isFast);
     }
   } else {
     fieldsFeedback.textContent = "❌ ยังไม่ถูกทั้งหมด ลองตรวจสอบอีกครั้ง";
