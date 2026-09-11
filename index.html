@@ -833,6 +833,32 @@ function isCorrect(userInput, acceptList){
   if(!norm) return false;
   return acceptList.some(acc => normalizeAnswer(acc) === norm);
 }
+/* ---- Google Sheet logging (Apps Script backend) ---- */
+const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwtSPPUKosgM14jQ07oNhZdqjDYpq38gm14ljjXP7bAza-CBUk-SE4I4x2sS4XHI-qo/exec";
+const CATEGORY_LABEL = {
+  detective: "Power Detective",
+  rules: "Power Rules",
+  challenge: "Power Challenge",
+  reallife: "Power in Real Life",
+};
+function sendToSheet(category, question, result, timeSpent){
+  if(!GAS_WEBAPP_URL){ return; }
+  const payload = {
+    name: confirmedName || "",
+    room: confirmedRoom || "",
+    category: CATEGORY_LABEL[category] || category,
+    question: question,
+    result: result,
+    timeSpent: (typeof timeSpent === "number") ? timeSpent : "",
+  };
+  // ใช้ Content-Type: text/plain เพื่อเลี่ยง CORS preflight ที่ Apps Script ไม่รองรับ
+  fetch(GAS_WEBAPP_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  }).catch(err => console.error("ส่งข้อมูลไป Google Sheet ไม่สำเร็จ", err));
+}
+
 const TAG_NAMES = {
   detective: "แฟ้ม 1 · Power Detective",
   rules: "แฟ้ม 2 · Power Rules",
@@ -911,6 +937,8 @@ const caseCardEl = document.getElementById('caseCard');
 const goldenTagEl = document.getElementById('goldenTag');
 const tipText = document.getElementById('tipText');
 let playerIdentity = "";
+let confirmedName = "";
+let confirmedRoom = "";
 const playerNameInput = document.getElementById('playerName');
 const playerRoomInput = document.getElementById('playerRoom');
 const nameGate = document.getElementById('nameGate');
@@ -936,6 +964,8 @@ document.getElementById('confirmNameBtn').addEventListener('click', async ()=>{
     return;
   }
   playerIdentity = `${n} (${r})`;
+  confirmedName = n;
+  confirmedRoom = r;
   confirmedText.textContent = `🕵️ กำลังสืบสวนในนาม: ${playerIdentity}`;
   nameGate.style.display = 'none';
   nameConfirmed.style.display = 'flex';
@@ -1384,6 +1414,7 @@ document.getElementById('checkBtn').addEventListener('click', ()=>{
       scoreEl.textContent = score;
       celebrate(checkFeedback, points);
       recordSolve(currentCase.cat, isFast, points);
+      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed);
     }
   } else {
     checkFeedback.textContent = "❌ ยังไม่ถูก ลองตรวจสอบวิธีคิดอีกครั้ง";
@@ -1408,6 +1439,7 @@ document.getElementById('revealBtn').addEventListener('click', ()=>{
     score += 1;
     scoreEl.textContent = score;
     recordSolve(currentCase.cat, false, 1);
+    sendToSheet(currentCase.cat, currentCase.q, "เฉลย", elapsed);
   }
 });
 
@@ -1428,6 +1460,7 @@ function handleTfAnswer(userChoiceIsTrue){
       scoreEl.textContent = score;
       celebrate(tfFeedback, points);
       recordSolve(currentCase.cat, isFast, points);
+      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed);
     }
   } else {
     tfFeedback.textContent = "❌ ยังไม่ถูก ลองคิดดูอีกครั้ง";
@@ -1461,6 +1494,7 @@ fieldsCheckBtn.addEventListener('click', ()=>{
       scoreEl.textContent = score;
       celebrate(fieldsFeedback, points);
       recordSolve(currentCase.cat, isFast, points);
+      sendToSheet(currentCase.cat, currentCase.q, "ถูกต้อง", elapsed);
     }
   } else {
     fieldsFeedback.textContent = "❌ ยังไม่ถูกทั้งหมด ลองตรวจสอบอีกครั้ง";
