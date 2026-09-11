@@ -542,17 +542,15 @@
     <div class="right-col">
       <div>
         <div class="timer-clock" id="clockFace">
-          <div class="timer-display" id="timerDisplay">05:00</div>
-          <div class="timer-label">เวลาไขคดี</div>
+          <div class="timer-display" id="timerDisplay">--:--</div>
+          <div class="timer-label" id="timerLabel">เวลาไขคดี</div>
         </div>
         <div class="timer-controls">
-          <button class="chip active" data-sec="180">3 นาที</button>
-          <button class="chip" data-sec="300">5 นาที</button>
-          <button class="chip" data-sec="600">10 นาที</button>
+          <span class="chip" id="autoTimeTag">⏱ เวลาอัตโนมัติตามแฟ้ม</span>
         </div>
         <div class="btn-row">
-          <button class="btn" id="startBtn">▶ เริ่มจับเวลา</button>
-          <button class="btn stop" id="resetTimerBtn">↺ รีเซ็ต</button>
+          <button class="btn" id="pauseBtn">⏸ หยุดชั่วคราว</button>
+          <button class="btn stop" id="resetTimerBtn">↺ เริ่มจับเวลาข้อนี้ใหม่</button>
         </div>
       </div>
 
@@ -575,6 +573,7 @@
           <div class="explain-note" id="explainNote">📝 ข้อนี้เป็นคำถามอธิบาย ให้นักเรียนเขียนคำตอบลงกระดาษก่อน แล้วกด "เฉลยคดี" เพื่อตรวจสอบด้วยตนเอง</div>
           <div class="answer-box" id="answerBox">
             <b>เฉลย:</b> <span id="answerText"></span>
+            <div id="timeSpentText" style="margin-top:6px; font-size:12.5px; color:var(--ink-soft);"></div>
           </div>
           <div class="stamp" id="stamp">SOLVED</div>
         </div>
@@ -939,6 +938,8 @@ function drawNewCase(){
   checkFeedback.textContent = "";
   checkFeedback.className = "check-feedback";
   answerInput.value = "";
+  timeSpentText.textContent = "";
+  lastElapsedSeconds = null;
 
   if(currentCase.type === "exact"){
     answerRow.classList.add('show');
@@ -947,6 +948,8 @@ function drawNewCase(){
     answerRow.classList.remove('show');
     explainNote.classList.add('show');
   }
+
+  startTimerForCase(currentCase.cat);
 }
 
 document.getElementById('drawBtn').addEventListener('click', drawNewCase);
@@ -962,6 +965,8 @@ document.getElementById('checkBtn').addEventListener('click', ()=>{
     stampEl.classList.add('show');
     if(!solvedThisCase){
       solvedThisCase = true;
+      const elapsed = stopTimerAndRecordElapsed();
+      timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
       score++;
       scoreEl.textContent = score;
       addPointToLeaderboard();
@@ -983,19 +988,41 @@ document.getElementById('revealBtn').addEventListener('click', ()=>{
   stampEl.classList.add('show');
   if(!solvedThisCase){
     solvedThisCase = true;
+    const elapsed = stopTimerAndRecordElapsed();
+    timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
     score++;
     scoreEl.textContent = score;
     addPointToLeaderboard();
   }
 });
 
-/* ---- Timer ---- */
-let totalSeconds = 180;
-let remaining = totalSeconds;
+/* ---- Timer (auto, set by which แฟ้ม the case belongs to) ---- */
+const CATEGORY_TIME = {
+  detective: 180,  // แฟ้ม 1 : ไม่เกิน 3 นาที/ข้อ
+  rules: 180,      // แฟ้ม 2 : ไม่เกิน 3 นาที/ข้อ
+  challenge: 300,  // แฟ้ม 3 : ไม่เกิน 5 นาที/ข้อ
+  reallife: 600,   // แฟ้ม 4 : ไม่เกิน 10 นาที/ข้อ
+};
+const CATEGORY_TIME_LABEL = {
+  detective: "3 นาที/ข้อ",
+  rules: "3 นาที/ข้อ",
+  challenge: "5 นาที/ข้อ",
+  reallife: "10 นาที/ข้อ",
+};
+
+let totalSeconds = 0;
+let remaining = 0;
 let timerInterval = null;
+let caseStartTimestamp = null;
+let lastElapsedSeconds = null;
+let isPaused = false;
+
 const timerDisplay = document.getElementById('timerDisplay');
+const timerLabel = document.getElementById('timerLabel');
+const autoTimeTag = document.getElementById('autoTimeTag');
 const clockFace = document.getElementById('clockFace');
-const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const timeSpentText = document.getElementById('timeSpentText');
 
 function formatTime(s){
   const m = Math.floor(s/60).toString().padStart(2,'0');
@@ -1005,21 +1032,6 @@ function formatTime(s){
 function updateDisplay(){
   timerDisplay.textContent = formatTime(remaining);
 }
-
-document.querySelectorAll('.chip').forEach(chip=>{
-  chip.addEventListener('click', ()=>{
-    document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
-    chip.classList.add('active');
-    totalSeconds = parseInt(chip.dataset.sec,10);
-    remaining = totalSeconds;
-    clockFace.classList.remove('buzz');
-    updateDisplay();
-    clearInterval(timerInterval);
-    timerInterval = null;
-    startBtn.textContent = "▶ เริ่มจับเวลา";
-  });
-});
-
 function beep(){
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1034,14 +1046,22 @@ function beep(){
   }catch(e){}
 }
 
-startBtn.addEventListener('click', ()=>{
-  if(timerInterval){
-    clearInterval(timerInterval);
-    timerInterval = null;
-    startBtn.textContent = "▶ เริ่มจับเวลา";
-    return;
-  }
-  startBtn.textContent = "⏸ หยุดชั่วคราว";
+/** เริ่มจับเวลาใหม่ทั้งหมดสำหรับคดีที่เพิ่งหยิบขึ้นมา ตามเวลาที่กำหนดของแฟ้มนั้น */
+function startTimerForCase(category){
+  clearInterval(timerInterval);
+  timerInterval = null;
+  isPaused = false;
+  pauseBtn.textContent = "⏸ หยุดชั่วคราว";
+  totalSeconds = CATEGORY_TIME[category] || 180;
+  remaining = totalSeconds;
+  autoTimeTag.textContent = "⏱ " + (CATEGORY_TIME_LABEL[category] || "");
+  clockFace.classList.remove('buzz');
+  updateDisplay();
+  caseStartTimestamp = Date.now();
+  runInterval();
+}
+function runInterval(){
+  clearInterval(timerInterval);
   timerInterval = setInterval(()=>{
     remaining--;
     if(remaining <= 0){
@@ -1051,21 +1071,39 @@ startBtn.addEventListener('click', ()=>{
       timerInterval = null;
       clockFace.classList.add('buzz');
       beep();
-      startBtn.textContent = "▶ เริ่มจับเวลา";
       return;
     }
     if(remaining <= 10){ beep(); }
     updateDisplay();
   }, 1000);
+}
+/** หยุดตัวจับเวลา แล้วคำนวณเวลาที่ใช้ไปจริง (วินาที) สำหรับคดีข้อนี้ */
+function stopTimerAndRecordElapsed(){
+  clearInterval(timerInterval);
+  timerInterval = null;
+  if(caseStartTimestamp){
+    lastElapsedSeconds = Math.round((Date.now() - caseStartTimestamp) / 1000);
+  }
+  return lastElapsedSeconds;
+}
+
+pauseBtn.addEventListener('click', ()=>{
+  if(!caseStartTimestamp){ return; }
+  if(isPaused){
+    isPaused = false;
+    pauseBtn.textContent = "⏸ หยุดชั่วคราว";
+    runInterval();
+  } else {
+    isPaused = true;
+    pauseBtn.textContent = "▶ เล่นต่อ";
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
 });
 
 document.getElementById('resetTimerBtn').addEventListener('click', ()=>{
-  clearInterval(timerInterval);
-  timerInterval = null;
-  remaining = totalSeconds;
-  clockFace.classList.remove('buzz');
-  updateDisplay();
-  startBtn.textContent = "▶ เริ่มจับเวลา";
+  if(!currentCase){ return; }
+  startTimerForCase(currentCase.cat);
 });
 
 updateDisplay();
