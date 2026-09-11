@@ -259,6 +259,56 @@
     margin-top:10px;
   }
 
+  /* ---- confetti celebration ---- */
+  #confettiLayer{
+    position:fixed; inset:0;
+    pointer-events:none;
+    overflow:hidden;
+    z-index:1500;
+  }
+  .confetti-piece{
+    position:absolute;
+    top:-20px;
+    width:8px;
+    height:14px;
+    opacity:0.9;
+    animation: confettiFall linear forwards;
+  }
+  @keyframes confettiFall{
+    to { transform: translateY(110vh) rotate(360deg); opacity:0.3; }
+  }
+
+  /* ---- golden case ---- */
+  .golden-tag{
+    display:none;
+    margin-bottom:10px;
+    font-family:Georgia, serif;
+    font-weight:700;
+    font-size:13px;
+    color:#7a5a0a;
+    background:linear-gradient(120deg, #fff3c4, #f5d67a, #fff3c4);
+    background-size:200% auto;
+    border:1px solid #c9a24a;
+    border-radius:12px;
+    padding:5px 12px;
+    width:fit-content;
+    animation: goldShimmer 2.5s linear infinite;
+  }
+  .golden-tag.show{ display:block; }
+  @keyframes goldShimmer{
+    0%{ background-position:0% 50%; }
+    100%{ background-position:200% 50%; }
+  }
+  .case-card.golden{
+    box-shadow:0 0 0 3px #e6c35c, 8px 10px 24px rgba(0,0,0,0.45);
+  }
+
+  /* ---- badges in leaderboard ---- */
+  .lb-badges{
+    font-size:12px;
+    margin-left:4px;
+  }
+
   /* ---- Right: case file card + timer ---- */
   .right-col{ display:flex; flex-direction:column; gap:22px; }
 
@@ -548,6 +598,7 @@
 </style>
 </head>
 <body>
+  <div id="confettiLayer"></div>
 
   <div class="header">
     <span class="tag">คดีลับ · ห้องเรียนคณิตศาสตร์ ม.2</span>
@@ -609,7 +660,8 @@
 
       <div class="case-wrap">
         <div class="paperclip"></div>
-        <div class="case-card">
+        <div class="case-card" id="caseCard">
+          <div class="golden-tag" id="goldenTag">✨ คดีทองคำ! ตอบถูกได้ 2 เท่า</div>
           <div class="case-number" id="caseNumber">แฟ้มคดีที่ #000</div>
           <span class="case-tag" id="caseTag">ยังไม่เปิดแฟ้ม</span>
           <div class="case-q" id="caseQ">
@@ -769,6 +821,10 @@ const fieldsCheckBtn = document.getElementById('fieldsCheckBtn');
 const fieldsFeedback = document.getElementById('fieldsFeedback');
 
 let solvedThisCase = false;
+let isGoldenCase = false;
+const GOLDEN_CASE_CHANCE = 0.12;
+const caseCardEl = document.getElementById('caseCard');
+const goldenTagEl = document.getElementById('goldenTag');
 let playerIdentity = "";
 const playerNameInput = document.getElementById('playerName');
 const playerRoomInput = document.getElementById('playerRoom');
@@ -817,6 +873,120 @@ function escapeHtml(str){
   return div.innerHTML;
 }
 
+/* ---- player record normalization + badges ---- */
+function normalizePlayerRecord(raw){
+  if(typeof raw === "number"){
+    return { score: raw, catsSolved: {}, fastCount: 0 };
+  }
+  if(!raw || typeof raw !== "object"){
+    return { score: 0, catsSolved: {}, fastCount: 0 };
+  }
+  return {
+    score: raw.score || 0,
+    catsSolved: raw.catsSolved || {},
+    fastCount: raw.fastCount || 0,
+  };
+}
+const BADGE_INFO = {
+  "🕵️": "นักสืบมือใหม่ (ไขครบ 5 คดี)",
+  "🕵️‍♂️": "นักสืบมือฉมัง (ไขครบ 15 คดี)",
+  "⚡": "จอมสายฟ้า (ตอบเร็วกว่าครึ่งเวลาที่กำหนด 3 ครั้ง)",
+  "🗂️": "นักสืบครบวงจร (ไขคดีสำเร็จครบทั้ง 4 แฟ้ม)",
+};
+function getBadges(record){
+  const badges = [];
+  if(record.score >= 5){ badges.push("🕵️"); }
+  if(record.score >= 15){ badges.push("🕵️‍♂️"); }
+  if(record.fastCount >= 3){ badges.push("⚡"); }
+  const cats = record.catsSolved || {};
+  if((cats.detective||0) > 0 && (cats.rules||0) > 0 && (cats.challenge||0) > 0 && (cats.reallife||0) > 0){
+    badges.push("🗂️");
+  }
+  return badges;
+}
+
+/* ---- celebration: confetti + chime + random quip ---- */
+const SUCCESS_QUIPS = [
+  "คดีนี้จบแล้ว! 🕵️",
+  "จับได้คาหนังคาเขา!",
+  "นักสืบมือฉมังจริง ๆ!",
+  "ปิดคดีได้อย่างสวยงาม!",
+  "หลักฐานชัดเจน ไขได้สำเร็จ!",
+  "เยี่ยมมาก คดีนี้ไขไม่ยากเลย!",
+  "นักสืบชั้นเซียนตัวจริง!",
+];
+function randomQuip(){
+  return SUCCESS_QUIPS[Math.floor(Math.random() * SUCCESS_QUIPS.length)];
+}
+const CONFETTI_COLORS = ["#a4372c","#c9a24a","#2e7d46","#1f5c99","#6a3d9a","#e6cd97"];
+function launchConfetti(){
+  const layer = document.getElementById('confettiLayer');
+  if(!layer){ return; }
+  const count = 26;
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti-piece';
+    el.style.left = (Math.random()*100) + "%";
+    el.style.background = CONFETTI_COLORS[Math.floor(Math.random()*CONFETTI_COLORS.length)];
+    const duration = 1.6 + Math.random()*1.2;
+    el.style.animationDuration = duration + "s";
+    el.style.animationDelay = (Math.random()*0.3) + "s";
+    el.style.transform = `rotate(${Math.random()*360}deg)`;
+    layer.appendChild(el);
+    setTimeout(()=>{ if(el.parentNode){ el.parentNode.removeChild(el); } }, (duration+0.6)*1000);
+  }
+}
+function playSuccessChime(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99];
+    notes.forEach((freq, i)=>{
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + i*0.12);
+      g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + i*0.12 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i*0.12 + 0.25);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(ctx.currentTime + i*0.12);
+      o.stop(ctx.currentTime + i*0.12 + 0.3);
+    });
+    setTimeout(()=>{ try{ ctx.close(); }catch(e){} }, 700);
+  }catch(e){}
+}
+function celebrate(feedbackEl, points){
+  let msg = "✅ " + randomQuip();
+  if(points > 1){ msg += "  🎉 คดีทองคำ! +" + points + " คะแนน"; }
+  feedbackEl.textContent = msg;
+  feedbackEl.className = "check-feedback correct";
+  launchConfetti();
+  playSuccessChime();
+}
+async function showBadgeUnlockModal(newBadges){
+  launchConfetti();
+  playSuccessChime();
+  const lines = newBadges.map(b => `${b} ${BADGE_INFO[b] || ""}`).join("<br>");
+  await showInfoModalRaw("🎖️ ปลดล็อกตราใหม่!", lines);
+}
+function showInfoModalRaw(title, htmlMessage){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <h3>${title}</h3>
+        <p>${htmlMessage}</p>
+        <div class="modal-actions">
+          <button id="modalInfoRawOk" class="btn">เยี่ยม!</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function finish(){ document.body.removeChild(overlay); resolve(); }
+    overlay.querySelector('#modalInfoRawOk').addEventListener('click', finish);
+  });
+}
+
 async function loadLeaderboard(){
   try{
     const result = await window.storage.get('leaderboard', true);
@@ -834,14 +1004,17 @@ async function saveLeaderboard(board){
   }
 }
 function renderLeaderboard(board){
-  const arr = Object.entries(board).sort((a,b)=> b[1]-a[1]);
+  const arr = Object.entries(board)
+    .map(([name, raw]) => [name, normalizePlayerRecord(raw)])
+    .sort((a,b)=> b[1].score - a[1].score);
   if(arr.length === 0){
     lbList.innerHTML = '<div class="lb-empty">ยังไม่มีนักสืบไขคดีเลย</div>';
     return;
   }
-  lbList.innerHTML = arr.map(([name,pts],i)=>
-    `<div class="lb-row"><span>${i+1}. ${escapeHtml(name)}</span><b>${pts}</b></div>`
-  ).join('');
+  lbList.innerHTML = arr.map(([name, rec], i)=>{
+    const badges = getBadges(rec).join(" ");
+    return `<div class="lb-row"><span>${i+1}. ${escapeHtml(name)} <span class="lb-badges">${badges}</span></span><b>${rec.score}</b></div>`;
+  }).join('');
 }
 function csvEscape(field){
   const s = String(field);
@@ -852,13 +1025,16 @@ function csvEscape(field){
 }
 async function exportLeaderboardCsv(){
   const board = await loadLeaderboard();
-  const arr = Object.entries(board).sort((a,b)=> b[1]-a[1]);
-  let rows = [["อันดับ","ชื่อนักสืบ","ห้อง","คะแนน"]];
-  arr.forEach(([identity, pts], i)=>{
+  const arr = Object.entries(board)
+    .map(([name, raw]) => [name, normalizePlayerRecord(raw)])
+    .sort((a,b)=> b[1].score - a[1].score);
+  let rows = [["อันดับ","ชื่อนักสืบ","ห้อง","คะแนน","ตราสัญลักษณ์"]];
+  arr.forEach(([identity, rec], i)=>{
     const m = identity.match(/^(.*)\s\((.*)\)$/);
     const name = m ? m[1] : identity;
     const room = m ? m[2] : "";
-    rows.push([i+1, name, room, pts]);
+    const badgeNames = getBadges(rec).map(b => BADGE_INFO[b] || b).join(" / ");
+    rows.push([i+1, name, room, rec.score, badgeNames]);
   });
   const csvContent = "\uFEFF" + rows.map(r => r.map(csvEscape).join(",")).join("\r\n");
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -964,12 +1140,25 @@ async function refreshLeaderboard(){
   const board = await loadLeaderboard();
   renderLeaderboard(board);
 }
-async function addPointToLeaderboard(){
+async function recordSolve(category, isFast, points){
   if(!playerIdentity){ return; }
   const board = await loadLeaderboard();
-  board[playerIdentity] = (board[playerIdentity] || 0) + 1;
+  const rec = normalizePlayerRecord(board[playerIdentity]);
+  const beforeBadges = getBadges(rec);
+
+  rec.score += points;
+  rec.catsSolved[category] = (rec.catsSolved[category] || 0) + 1;
+  if(isFast){ rec.fastCount += 1; }
+
+  board[playerIdentity] = rec;
   await saveLeaderboard(board);
   renderLeaderboard(board);
+
+  const afterBadges = getBadges(rec);
+  const newBadges = afterBadges.filter(b => !beforeBadges.includes(b));
+  if(newBadges.length > 0){
+    await showBadgeUnlockModal(newBadges);
+  }
 }
 
 document.getElementById('refreshLbBtn').addEventListener('click', refreshLeaderboard);
@@ -1021,6 +1210,10 @@ function drawNewCase(){
   tfFeedback.textContent = "";
   tfFeedback.className = "check-feedback";
 
+  isGoldenCase = Math.random() < GOLDEN_CASE_CHANCE;
+  goldenTagEl.classList.toggle('show', isGoldenCase);
+  caseCardEl.classList.toggle('golden', isGoldenCase);
+
   answerRow.classList.remove('show');
   explainNote.classList.remove('show');
   tfRow.classList.remove('show');
@@ -1050,18 +1243,19 @@ document.getElementById('checkBtn').addEventListener('click', ()=>{
   if(!currentCase || currentCase.type !== "exact"){ return; }
   const userVal = answerInput.value;
   if(isCorrect(userVal, currentCase.accept)){
-    checkFeedback.textContent = "✅ ถูกต้อง! เก่งมาก นักสืบ";
-    checkFeedback.className = "check-feedback correct";
     answerText.textContent = currentCase.a;
     answerBox.classList.add('show');
     stampEl.classList.add('show');
     if(!solvedThisCase){
       solvedThisCase = true;
       const elapsed = stopTimerAndRecordElapsed();
+      const isFast = elapsed <= (totalSeconds / 2);
+      const points = isGoldenCase ? 2 : 1;
       timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
-      score++;
+      score += points;
       scoreEl.textContent = score;
-      addPointToLeaderboard();
+      celebrate(checkFeedback, points);
+      recordSolve(currentCase.cat, isFast, points);
     }
   } else {
     checkFeedback.textContent = "❌ ยังไม่ถูก ลองตรวจสอบวิธีคิดอีกครั้ง";
@@ -1082,27 +1276,28 @@ document.getElementById('revealBtn').addEventListener('click', ()=>{
     solvedThisCase = true;
     const elapsed = stopTimerAndRecordElapsed();
     timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
-    score++;
+    score += 1;
     scoreEl.textContent = score;
-    addPointToLeaderboard();
+    recordSolve(currentCase.cat, false, 1);
   }
 });
 
 function handleTfAnswer(userChoiceIsTrue){
   if(!currentCase || currentCase.type !== "truefalse"){ return; }
   if(userChoiceIsTrue === currentCase.correct){
-    tfFeedback.textContent = "✅ ถูกต้อง! เก่งมาก นักสืบ";
-    tfFeedback.className = "check-feedback correct";
     answerText.textContent = currentCase.a;
     answerBox.classList.add('show');
     stampEl.classList.add('show');
     if(!solvedThisCase){
       solvedThisCase = true;
       const elapsed = stopTimerAndRecordElapsed();
+      const isFast = elapsed <= (totalSeconds / 2);
+      const points = isGoldenCase ? 2 : 1;
       timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
-      score++;
+      score += points;
       scoreEl.textContent = score;
-      addPointToLeaderboard();
+      celebrate(tfFeedback, points);
+      recordSolve(currentCase.cat, isFast, points);
     }
   } else {
     tfFeedback.textContent = "❌ ยังไม่ถูก ลองคิดดูอีกครั้ง";
@@ -1122,18 +1317,19 @@ fieldsCheckBtn.addEventListener('click', ()=>{
     if(!ok){ allCorrect = false; }
   });
   if(allCorrect){
-    fieldsFeedback.textContent = "✅ ถูกต้อง! เก่งมาก นักสืบ";
-    fieldsFeedback.className = "check-feedback correct";
     answerText.textContent = currentCase.a;
     answerBox.classList.add('show');
     stampEl.classList.add('show');
     if(!solvedThisCase){
       solvedThisCase = true;
       const elapsed = stopTimerAndRecordElapsed();
+      const isFast = elapsed <= (totalSeconds / 2);
+      const points = isGoldenCase ? 2 : 1;
       timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
-      score++;
+      score += points;
       scoreEl.textContent = score;
-      addPointToLeaderboard();
+      celebrate(fieldsFeedback, points);
+      recordSolve(currentCase.cat, isFast, points);
     }
   } else {
     fieldsFeedback.textContent = "❌ ยังไม่ถูกทั้งหมด ลองตรวจสอบอีกครั้ง";
