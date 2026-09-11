@@ -826,23 +826,36 @@ let caseCounter = 0;
 let score = 0;
 let usedByCat = {};
 
-function allCasesFlat(){
-  let arr = [];
-  Object.keys(CASES).forEach(k=>{
-    CASES[k].forEach(item=> arr.push({...item, cat:k}));
-  });
-  return arr;
+const solvedIndices = { detective: new Set(), rules: new Set(), challenge: new Set(), reallife: new Set() };
+
+function getAvailableChoices(){
+  let list = [];
+  if(currentCat === "all"){
+    Object.keys(CASES).forEach(cat=>{
+      CASES[cat].forEach((item, idx)=>{
+        if(!solvedIndices[cat].has(idx)){ list.push({ cat, idx }); }
+      });
+    });
+  } else {
+    CASES[currentCat].forEach((item, idx)=>{
+      if(!solvedIndices[currentCat].has(idx)){ list.push({ cat: currentCat, idx }); }
+    });
+  }
+  return list;
 }
 
 function pickRandom(){
-  let pool;
-  if(currentCat === "all"){
-    pool = allCasesFlat();
-  } else {
-    pool = CASES[currentCat].map(item => ({...item, cat: currentCat}));
+  const available = getAvailableChoices();
+  if(available.length === 0){ return null; }
+  const choice = available[Math.floor(Math.random() * available.length)];
+  const item = CASES[choice.cat][choice.idx];
+  return { ...item, cat: choice.cat, _idx: choice.idx };
+}
+
+function markCurrentCaseSolved(){
+  if(currentCase && currentCase._idx !== undefined){
+    solvedIndices[currentCase.cat].add(currentCase._idx);
   }
-  const idx = Math.floor(Math.random() * pool.length);
-  return pool[idx];
 }
 
 const caseNumberEl = document.getElementById('caseNumber');
@@ -1239,8 +1252,41 @@ document.querySelectorAll('.cat-btn').forEach(btn=>{
   });
 });
 
+function showCaseClosed(cat){
+  clearInterval(timerInterval);
+  timerInterval = null;
+  currentCase = null;
+  const label = cat === "all" ? "คดีรวมทุกแฟ้ม" : TAG_NAMES[cat];
+  caseNumberEl.textContent = "—";
+  caseTagEl.textContent = label;
+  caseQEl.innerHTML = `🎉 <b>ปิดคดี ${label} เรียบร้อยแล้ว!</b><br>นักสืบไขครบทุกคดีในแฟ้มนี้แล้ว ลองเลือกแฟ้มคดีอื่นทางด้านซ้ายเพื่อสืบสวนต่อได้เลยค่ะ`;
+  goldenTagEl.classList.remove('show');
+  caseCardEl.classList.remove('golden');
+  answerRow.classList.remove('show');
+  tfRow.classList.remove('show');
+  fieldsRow.classList.remove('show');
+  explainNote.classList.remove('show');
+  answerBox.classList.remove('show');
+  stampEl.classList.remove('show');
+  checkFeedback.textContent = "";
+  checkFeedback.className = "check-feedback";
+  tfFeedback.textContent = "";
+  tfFeedback.className = "check-feedback";
+  fieldsFeedback.textContent = "";
+  fieldsFeedback.className = "check-feedback";
+  timeSpentText.textContent = "";
+  timerDisplay.textContent = "--:--";
+  autoTimeTag.textContent = "";
+  tipText.textContent = "เลือกแฟ้มคดีใหม่ทางซ้ายมือ เพื่อสืบสวนต่อได้เลยค่ะ";
+}
+
 function drawNewCase(){
-  currentCase = pickRandom();
+  const picked = pickRandom();
+  if(!picked){
+    showCaseClosed(currentCat);
+    return;
+  }
+  currentCase = picked;
   caseCounter++;
   solvedThisCase = false;
   caseNumberEl.textContent = "แฟ้มคดีที่ #" + String(caseCounter).padStart(3,'0');
@@ -1295,6 +1341,7 @@ document.getElementById('checkBtn').addEventListener('click', ()=>{
     stampEl.classList.add('show');
     if(!solvedThisCase){
       solvedThisCase = true;
+      markCurrentCaseSolved();
       const elapsed = stopTimerAndRecordElapsed();
       const isFast = elapsed <= (totalSeconds / 2);
       const points = isGoldenCase ? 2 : 1;
@@ -1321,6 +1368,7 @@ document.getElementById('revealBtn').addEventListener('click', ()=>{
   stampEl.classList.add('show');
   if(!solvedThisCase){
     solvedThisCase = true;
+      markCurrentCaseSolved();
     const elapsed = stopTimerAndRecordElapsed();
     timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
     score += 1;
@@ -1337,6 +1385,7 @@ function handleTfAnswer(userChoiceIsTrue){
     stampEl.classList.add('show');
     if(!solvedThisCase){
       solvedThisCase = true;
+      markCurrentCaseSolved();
       const elapsed = stopTimerAndRecordElapsed();
       const isFast = elapsed <= (totalSeconds / 2);
       const points = isGoldenCase ? 2 : 1;
@@ -1369,6 +1418,7 @@ fieldsCheckBtn.addEventListener('click', ()=>{
     stampEl.classList.add('show');
     if(!solvedThisCase){
       solvedThisCase = true;
+      markCurrentCaseSolved();
       const elapsed = stopTimerAndRecordElapsed();
       const isFast = elapsed <= (totalSeconds / 2);
       const points = isGoldenCase ? 2 : 1;
