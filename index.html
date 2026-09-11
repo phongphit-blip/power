@@ -309,6 +309,40 @@
     margin-left:4px;
   }
 
+  /* ---- tip / hint sticky note ---- */
+  .tip-card{
+    background:#fff4a8;
+    background-image: linear-gradient(135deg, rgba(255,255,255,0.35), transparent 60%);
+    border:1px solid #d8c15a;
+    border-radius:2px;
+    padding:12px 16px 14px;
+    margin-bottom:16px;
+    transform:rotate(-0.8deg);
+    box-shadow:3px 5px 10px rgba(0,0,0,0.3);
+    position:relative;
+  }
+  .tip-card::before{
+    content:"";
+    position:absolute;
+    top:-8px; left:24px;
+    width:14px; height:14px;
+    background:radial-gradient(circle at 35% 30%, #f2a3a3, #b3392f 80%);
+    border-radius:50%;
+    box-shadow:0 2px 3px rgba(0,0,0,0.4);
+  }
+  .tip-label{
+    font-family:Georgia, serif;
+    font-weight:700;
+    font-size:13px;
+    color:#5a4a00;
+    margin-bottom:5px;
+  }
+  .tip-text{
+    font-size:13.5px;
+    color:#4a3d10;
+    line-height:1.6;
+  }
+
   /* ---- Right: case file card + timer ---- */
   .right-col{ display:flex; flex-direction:column; gap:22px; }
 
@@ -658,6 +692,11 @@
         </div>
       </div>
 
+      <div class="tip-card" id="tipCard">
+        <div class="tip-label">💡 เกร็ดก่อนไขคดี</div>
+        <div class="tip-text" id="tipText">เลือกแฟ้มคดีทางซ้าย เพื่อดูเกร็ดความรู้ของแฟ้มนั้น</div>
+      </div>
+
       <div class="case-wrap">
         <div class="paperclip"></div>
         <div class="case-card" id="caseCard">
@@ -774,6 +813,12 @@ const TAG_NAMES = {
   challenge: "แฟ้ม 3 · Power Challenge",
   reallife: "แฟ้ม 4 · Power in Real Life"
 };
+const TIP_CONTENT = {
+  detective: "เลขยกกำลังคือการเขียนแทนการคูณจำนวนเดียวกันซ้ำ ๆ ในรูป aⁿ โดย a คือ \"ฐาน\" (ตัวที่ถูกคูณ) และ n คือ \"เลขชี้กำลัง\" (บอกว่าฐานถูกคูณกันกี่ครั้ง)",
+  rules: "จำ 3 กฎนี้ไว้ให้ขึ้นใจ: คูณเลขยกกำลังฐานเดียวกัน → บวกเลขชี้กำลัง (aᵐ×aⁿ=aᵐ⁺ⁿ) · หาร → ลบเลขชี้กำลัง (aᵐ÷aⁿ=aᵐ⁻ⁿ) · ยกกำลังซ้อน → คูณเลขชี้กำลัง ((aᵐ)ⁿ=aᵐˣⁿ)",
+  challenge: "เจอโจทย์ปัญหา ให้ทำตามลำดับ: 1) โจทย์ต้องการอะไร 2) มีข้อมูลอะไรให้บ้าง 3) ควรใช้กฎเลขยกกำลังข้อไหน 4) คำนวณแล้วตรวจคำตอบอีกครั้งว่าสมเหตุสมผล",
+  reallife: "สัญกรณ์วิทยาศาสตร์เขียนในรูป a × 10ⁿ โดย a ต้องอยู่ระหว่าง 1 ถึง 10 เสมอ ถ้าจำนวนมากกว่า 10 มาก ๆ เลขชี้กำลังจะเป็นบวก ถ้าน้อยกว่า 1 เลขชี้กำลังจะเป็นลบ",
+};
 
 let currentCat = "all";
 let currentCase = null;
@@ -825,6 +870,7 @@ let isGoldenCase = false;
 const GOLDEN_CASE_CHANCE = 0.12;
 const caseCardEl = document.getElementById('caseCard');
 const goldenTagEl = document.getElementById('goldenTag');
+const tipText = document.getElementById('tipText');
 let playerIdentity = "";
 const playerNameInput = document.getElementById('playerName');
 const playerRoomInput = document.getElementById('playerRoom');
@@ -1213,6 +1259,7 @@ function drawNewCase(){
   isGoldenCase = Math.random() < GOLDEN_CASE_CHANCE;
   goldenTagEl.classList.toggle('show', isGoldenCase);
   caseCardEl.classList.toggle('golden', isGoldenCase);
+  tipText.textContent = TIP_CONTENT[currentCase.cat] || "";
 
   answerRow.classList.remove('show');
   explainNote.classList.remove('show');
