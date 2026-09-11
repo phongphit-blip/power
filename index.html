@@ -1199,7 +1199,15 @@ async function refreshLeaderboard(){
   const board = await loadLeaderboard();
   renderLeaderboard(board);
 }
-async function recordSolve(category, isFast, points){
+let leaderboardQueue = Promise.resolve();
+function recordSolve(category, isFast, points){
+  // ต่อคิวการบันทึกคะแนนทีละครั้ง ป้องกันการบันทึกทับกันเมื่อตอบเร็วติดกันหลายข้อ
+  leaderboardQueue = leaderboardQueue
+    .then(() => doRecordSolve(category, isFast, points))
+    .catch(e => console.error("recordSolve error", e));
+  return leaderboardQueue;
+}
+async function doRecordSolve(category, isFast, points){
   if(!playerIdentity){ return; }
   const board = await loadLeaderboard();
   const rec = normalizePlayerRecord(board[playerIdentity]);
