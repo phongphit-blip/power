@@ -494,6 +494,43 @@
     gap:10px;
     flex-wrap:wrap;
   }
+  .fields-row{
+    margin-top:18px;
+    display:none;
+  }
+  .fields-row.show{ display:block; }
+  .fields-row label{
+    font-size:13px;
+    color:var(--ink-soft);
+    display:block;
+    margin-bottom:8px;
+  }
+  .fields-inputs{
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+    margin-bottom:10px;
+  }
+  .field-item{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .field-item span{
+    font-size:14px;
+    color:var(--ink);
+  }
+  .field-item input{
+    width:80px;
+    font-family:inherit;
+    font-size:16px;
+    padding:8px 8px;
+    border:2px solid var(--manila-edge);
+    border-radius:3px;
+    background:#fffef9;
+    color:var(--ink);
+  }
+  .field-item input:focus{ outline:none; border-color:var(--stamp-green); }
 
   .case-actions{
     display:flex;
@@ -595,6 +632,12 @@
             </div>
             <div class="check-feedback" id="tfFeedback"></div>
           </div>
+          <div class="fields-row" id="fieldsRow">
+            <label>✍️ พิมพ์คำตอบของนักสืบ (ตัวเลขเท่านั้น)</label>
+            <div class="fields-inputs" id="fieldsInputs"></div>
+            <button class="btn" id="fieldsCheckBtn" disabled>✅ ตรวจคำตอบ</button>
+            <div class="check-feedback" id="fieldsFeedback"></div>
+          </div>
           <div class="answer-box" id="answerBox">
             <b>เฉลย:</b> <span id="answerText"></span>
             <div id="timeSpentText" style="margin-top:6px; font-size:12.5px; color:var(--ink-soft);"></div>
@@ -615,8 +658,8 @@
 const CASES = {
   detective: [
     {q:"3 × 3 × 3 × 3 เขียนเป็นเลขยกกำลังได้ว่าอะไร?", a:"3⁴", type:"exact", accept:["3^4"]},
-    {q:"5⁴ มีฐานเท่าใด และเลขชี้กำลังเท่าใด?", a:"ฐาน = 5, เลขชี้กำลัง = 4", type:"explain"},
-    {q:"2⁶ เขียนในรูปการคูณซ้ำได้อย่างไร?", a:"2×2×2×2×2×2", type:"explain"},
+    {q:"5⁴ มีฐานเท่าใด และเลขชี้กำลังเท่าใด?", a:"ฐาน = 5, เลขชี้กำลัง = 4", type:"fields", fields:[{label:"ฐาน", accept:["5"]},{label:"เลขชี้กำลัง", accept:["4"]}]},
+    {q:"2⁶ เขียนในรูปการคูณซ้ำได้อย่างไร?", a:"2×2×2×2×2×2", type:"exact", accept:["2x2x2x2x2x2"]},
     {q:"4³ มีค่าเท่ากับเท่าใด?", a:"64", type:"exact", accept:["64"]},
     {q:"10⁵ มีค่าเท่ากับเท่าใด?", a:"100,000", type:"exact", accept:["100000"]},
     {q:"7 × 7 × 7 เขียนเป็นเลขยกกำลังได้ว่าอะไร?", a:"7³", type:"exact", accept:["7^3"]},
@@ -659,7 +702,7 @@ function normalizeAnswer(str){
   if(!str) return "";
   let s = str.trim().toLowerCase();
   s = s.replace(/,/g, "");
-  s = s.replace(/×/g, "x").replace(/÷/g, "/");
+  s = s.replace(/×/g, "x").replace(/÷/g, "/").replace(/\*/g, "x");
   // collapse a run of superscript characters into ^ + digits
   s = s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+/g, (run) => {
     const mapped = run.split("").map(ch => SUPER_MAP[ch] || "").join("");
@@ -720,6 +763,10 @@ const tfRow = document.getElementById('tfRow');
 const tfTrueBtn = document.getElementById('tfTrueBtn');
 const tfFalseBtn = document.getElementById('tfFalseBtn');
 const tfFeedback = document.getElementById('tfFeedback');
+const fieldsRow = document.getElementById('fieldsRow');
+const fieldsInputs = document.getElementById('fieldsInputs');
+const fieldsCheckBtn = document.getElementById('fieldsCheckBtn');
+const fieldsFeedback = document.getElementById('fieldsFeedback');
 
 let solvedThisCase = false;
 let playerIdentity = "";
@@ -737,6 +784,7 @@ function setInterfaceLocked(unlocked){
   document.getElementById('revealBtn').disabled = !unlocked;
   document.getElementById('tfTrueBtn').disabled = !unlocked;
   document.getElementById('tfFalseBtn').disabled = !unlocked;
+  document.getElementById('fieldsCheckBtn').disabled = !unlocked;
 }
 
 document.getElementById('confirmNameBtn').addEventListener('click', async ()=>{
@@ -976,11 +1024,19 @@ function drawNewCase(){
   answerRow.classList.remove('show');
   explainNote.classList.remove('show');
   tfRow.classList.remove('show');
+  fieldsRow.classList.remove('show');
+  fieldsFeedback.textContent = "";
+  fieldsFeedback.className = "check-feedback";
 
   if(currentCase.type === "exact"){
     answerRow.classList.add('show');
   } else if(currentCase.type === "truefalse"){
     tfRow.classList.add('show');
+  } else if(currentCase.type === "fields"){
+    fieldsRow.classList.add('show');
+    fieldsInputs.innerHTML = currentCase.fields.map((f, i) =>
+      `<div class="field-item"><span>${f.label} =</span><input type="text" class="field-input" data-idx="${i}"></div>`
+    ).join('');
   } else {
     explainNote.classList.add('show');
   }
@@ -1055,6 +1111,35 @@ function handleTfAnswer(userChoiceIsTrue){
 }
 tfTrueBtn.addEventListener('click', ()=> handleTfAnswer(true));
 tfFalseBtn.addEventListener('click', ()=> handleTfAnswer(false));
+
+fieldsCheckBtn.addEventListener('click', ()=>{
+  if(!currentCase || currentCase.type !== "fields"){ return; }
+  const inputEls = fieldsInputs.querySelectorAll('.field-input');
+  let allCorrect = true;
+  inputEls.forEach((inp, i)=>{
+    const ok = isCorrect(inp.value, currentCase.fields[i].accept);
+    inp.style.borderColor = ok ? "var(--stamp-green)" : "var(--stamp-red)";
+    if(!ok){ allCorrect = false; }
+  });
+  if(allCorrect){
+    fieldsFeedback.textContent = "✅ ถูกต้อง! เก่งมาก นักสืบ";
+    fieldsFeedback.className = "check-feedback correct";
+    answerText.textContent = currentCase.a;
+    answerBox.classList.add('show');
+    stampEl.classList.add('show');
+    if(!solvedThisCase){
+      solvedThisCase = true;
+      const elapsed = stopTimerAndRecordElapsed();
+      timeSpentText.textContent = "⏱ ใช้เวลาไป " + formatTime(elapsed) + " น.";
+      score++;
+      scoreEl.textContent = score;
+      addPointToLeaderboard();
+    }
+  } else {
+    fieldsFeedback.textContent = "❌ ยังไม่ถูกทั้งหมด ลองตรวจสอบอีกครั้ง";
+    fieldsFeedback.className = "check-feedback wrong";
+  }
+});
 
 /* ---- Timer (auto, set by which แฟ้ม the case belongs to) ---- */
 const CATEGORY_TIME = {
